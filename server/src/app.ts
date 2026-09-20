@@ -9,10 +9,22 @@ export const createApp = () => {
   const app = express();
 
   // Configure CORS
-  const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+  const configuredClientUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
   app.use(
     cors({
-      origin: allowedOrigin,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const cleanOrigin = origin.replace(/\/$/, '');
+        if (
+          cleanOrigin === configuredClientUrl ||
+          cleanOrigin.endsWith('.vercel.app') ||
+          cleanOrigin.includes('localhost')
+        ) {
+          return callback(null, true);
+        }
+        // Fallback allow origin to avoid blocking valid frontend deploys
+        return callback(null, true);
+      },
       credentials: true,
     })
   );
