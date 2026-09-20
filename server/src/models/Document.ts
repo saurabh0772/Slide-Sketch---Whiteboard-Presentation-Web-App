@@ -22,6 +22,7 @@ export interface IPageData {
   id?: string;
   pageNumber: number;
   pdfPageNumber?: number | null;
+  isUserAdded?: boolean;
   annotations: IAnnotation[];
 }
 
@@ -69,6 +70,7 @@ const PageDataSchema = new Schema<IPageData>(
     id: { type: String },
     pageNumber: { type: Number, required: true },
     pdfPageNumber: { type: Number, default: null },
+    isUserAdded: { type: Boolean, default: false },
     annotations: [AnnotationSchema],
   },
   { _id: false }

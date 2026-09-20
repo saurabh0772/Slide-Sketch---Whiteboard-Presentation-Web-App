@@ -9,6 +9,7 @@ import { PageNavigation } from '../components/Editor/PageNavigation';
 import { PageThumbnailSidebar } from '../components/Editor/PageThumbnailSidebar';
 import { ShortcutsModal } from '../components/Editor/ShortcutsModal';
 import { exportPresentationToPdf } from '../utils/pdfExport';
+import * as pdfjsLib from 'pdfjs-dist';
 
 interface EditorPageProps {
   documentId: string;
@@ -22,6 +23,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
   const [doc, setDoc] = useState<IDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
 
   // Ordered list of slides (each slide has its own immutable id, optional pdfPageNumber, and annotations)
   const [slides, setSlides] = useState<ISlidePage[]>([]);
@@ -94,12 +96,14 @@ export const EditorPage: React.FC<EditorPageProps> = ({
                     ? idx + 1
                     : null,
                 annotations: p.annotations || [],
+                isUserAdded: Boolean(p.isUserAdded),
               }))
             : [
                 {
                   id: `slide-1-${Date.now()}`,
                   pdfPageNumber: 1,
                   annotations: [],
+                  isUserAdded: false,
                 },
               ];
 
@@ -120,6 +124,33 @@ export const EditorPage: React.FC<EditorPageProps> = ({
       isCancelled = true;
     };
   }, [documentId]);
+
+  // Load PDF Document for thumbnail generation when document has a PDF file
+  useEffect(() => {
+    if (!doc?.filePath) {
+      setPdfDoc(null);
+      return;
+    }
+
+    let isCancelled = false;
+    const url = getPdfFileUrl(documentId);
+    const loadingTask = pdfjsLib.getDocument(url);
+
+    loadingTask.promise
+      .then((loadedDoc) => {
+        if (!isCancelled) {
+          setPdfDoc(loadedDoc);
+        }
+      })
+      .catch((err) => {
+        console.warn('[EditorPage] Could not load PDF for thumbnails:', err);
+        if (!isCancelled) setPdfDoc(null);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [doc?.filePath, documentId]);
 
   // Current active slide object
   const currentSlide = slides[currentSlideIndex] || {
@@ -142,6 +173,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
           pageNumber: idx + 1,
           pdfPageNumber: s.pdfPageNumber,
           annotations: s.annotations,
+          isUserAdded: Boolean(s.isUserAdded),
         }));
 
         await updateDocument(documentId, {
@@ -242,6 +274,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
         id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         pdfPageNumber: null, // Blank white page
         annotations: [],
+        isUserAdded: true, // Only pages added via Add Page can be deleted
       };
 
       const next = [...prev];
@@ -257,12 +290,18 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     });
   }, [triggerAutosave]);
 
-  // Delete slide
+  // Delete slide - ONLY ALLOWED on user-added pages
   const handleDeleteSlide = useCallback(
     (indexToDelete: number) => {
       if (slides.length <= 1) return;
+      const target = slides[indexToDelete];
+      // STRICT SAFETY RULE: Only slides added by user via "+ Add Page" can be deleted
+      if (!target || !target.isUserAdded) {
+        return;
+      }
 
       setSlides((prev) => {
+        if (!prev[indexToDelete]?.isUserAdded) return prev;
         const next = prev.filter((_, idx) => idx !== indexToDelete);
         const newIndex = Math.min(
           currentSlideIndexRef.current >= indexToDelete
@@ -278,7 +317,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
       setIsSaved(false);
       triggerAutosave();
     },
-    [slides.length, triggerAutosave]
+    [slides, triggerAutosave]
   );
 
   // Delete single annotation by ID
@@ -569,6 +608,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
           currentSlideIndex={currentSlideIndex}
           onSelectSlide={setCurrentSlideIndex}
           onDeleteSlide={handleDeleteSlide}
+          pdfDoc={pdfDoc}
         />
 
         <SlideViewport

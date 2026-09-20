@@ -21,12 +21,14 @@ export interface ISlidePage {
   id: string;
   pdfPageNumber?: number | null;
   annotations: IAnnotation[];
+  isUserAdded?: boolean;
 }
 
 export interface IPageData {
   id?: string;
   pageNumber: number;
   pdfPageNumber?: number | null;
+  isUserAdded?: boolean;
   annotations: IAnnotation[];
 }
 

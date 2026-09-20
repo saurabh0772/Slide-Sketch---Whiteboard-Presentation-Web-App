@@ -23,7 +23,7 @@ export interface IExportOptions {
 /**
  * Render a single shape onto an HTML5 2D canvas context
  */
-function renderShapeToContext(ctx: CanvasRenderingContext2D, shape: IAnnotation) {
+export function renderShapeToContext(ctx: CanvasRenderingContext2D, shape: IAnnotation) {
   ctx.save();
 
   if (shape.type === 'pencil' && shape.points && shape.points.length >= 2) {
