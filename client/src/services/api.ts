@@ -1,7 +1,8 @@
 import type { IDocument, IDocumentSummary, IPageData } from '../types/document';
 
 const getNormalizedApiUrl = (): string => {
-  const envUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/$/, '');
+  const defaultUrl = import.meta.env.PROD ? 'https://slidesketch-backend.onrender.com/api' : '/api';
+  const envUrl = (import.meta.env.VITE_API_URL || defaultUrl).trim().replace(/\/$/, '');
   if (envUrl === '/api') return '/api';
   return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`;
 };
