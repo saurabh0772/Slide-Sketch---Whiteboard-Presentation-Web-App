@@ -42,6 +42,8 @@ export interface IDocumentSummary {
   aspectRatio?: number;
   is16x9?: boolean;
   gridFsFileId?: string;
+  filePath?: string;
+  pages?: IPageData[];
   createdAt: string;
   updatedAt: string;
 }

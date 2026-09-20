@@ -156,7 +156,8 @@ export const getDocuments = async (
     }
 
     const documents = await DocumentModel.find(filter)
-      .select('title originalName fileName fileSize totalPages aspectRatio is16x9 createdAt updatedAt')
+      .select('title originalName fileName filePath fileSize totalPages aspectRatio is16x9 gridFsFileId createdAt updatedAt')
+      .slice('pages', 1)
       .sort({ updatedAt: -1 });
 
     res.json({

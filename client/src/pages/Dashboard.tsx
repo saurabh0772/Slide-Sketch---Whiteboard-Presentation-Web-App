@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  FileText,
   Upload,
   Plus,
   Trash2,
@@ -28,6 +27,7 @@ import {
   getPdfFileUrl,
 } from '../services/api';
 import { exportPresentationToPdf } from '../utils/pdfExport';
+import { DashboardThumbnail } from '../components/Dashboard/DashboardThumbnail';
 
 interface DashboardProps {
   onOpenDocument: (documentId: string) => void;
@@ -405,16 +405,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
               >
                 <div>
                   {/* Top Thumbnail Preview Box */}
-                  <div className="w-full aspect-video bg-neutral-100 dark:bg-neutral-800/80 rounded-xl flex items-center justify-center mb-4 relative overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60 group-hover:bg-indigo-50/50 dark:group-hover:bg-indigo-950/20 transition-colors">
-                    <FileText className="w-10 h-10 text-neutral-400 group-hover:text-indigo-500 transition-colors" />
+                  <div className="w-full aspect-video bg-neutral-100 dark:bg-neutral-800/80 rounded-xl flex items-center justify-center mb-4 relative overflow-hidden border border-neutral-200/60 dark:border-neutral-700/60 group-hover:border-indigo-300 dark:group-hover:border-indigo-700 transition-colors">
+                    {/* Live presentation cover thumbnail */}
+                    <DashboardThumbnail doc={doc} />
 
                     {/* 16:9 badge */}
-                    <div className="absolute top-2.5 left-2.5 flex items-center space-x-1 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-xs">
+                    <div className="absolute top-2.5 left-2.5 flex items-center space-x-1 bg-indigo-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-xs backdrop-blur-xs z-10">
                       <span>16:9</span>
                     </div>
 
                     {/* Page count pill */}
-                    <div className="absolute top-2.5 right-2.5 flex items-center space-x-1 bg-neutral-900/80 text-white text-[11px] font-semibold px-2 py-0.5 rounded-md backdrop-blur-xs">
+                    <div className="absolute top-2.5 right-2.5 flex items-center space-x-1 bg-neutral-900/80 text-white text-[11px] font-semibold px-2 py-0.5 rounded-md backdrop-blur-xs z-10">
                       <Layers className="w-3 h-3" />
                       <span>{doc.totalPages} slides</span>
                     </div>
