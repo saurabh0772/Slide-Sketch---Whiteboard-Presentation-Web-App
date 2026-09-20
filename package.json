@@ -1,0 +1,21 @@
+{
+  "name": "slidesketch-monorepo",
+  "version": "1.0.0",
+  "description": "SlideSketch - PDF Presentation Viewer + Excalidraw-like Canvas Annotations",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"server,client\" -c \"blue,cyan\" \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "build": "npm run build --workspace=server && npm run build --workspace=client",
+    "server": "npm run dev --workspace=server",
+    "client": "npm run dev --workspace=client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
