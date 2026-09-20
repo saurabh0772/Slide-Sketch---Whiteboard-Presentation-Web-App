@@ -1,6 +1,12 @@
 import type { IDocument, IDocumentSummary, IPageData } from '../types/document';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const getNormalizedApiUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/$/, '');
+  if (envUrl === '/api') return '/api';
+  return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`;
+};
+
+const API_BASE_URL = getNormalizedApiUrl();
 
 export const AUTH_TOKEN_KEY = 'slidesketch_auth_token';
 export const AUTH_USER_KEY = 'slidesketch_auth_user';

@@ -38,11 +38,13 @@ export const createApp = () => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Authentication Routes (public login, protected verify)
+  // Authentication Routes (support both /api/auth and /auth)
   app.use('/api/auth', authRoutes);
+  app.use('/auth', authRoutes);
 
-  // API Routes protected by 30-day authentication
+  // API Routes protected by 30-day authentication (support both /api/documents and /documents)
   app.use('/api/documents', authMiddleware, documentRoutes);
+  app.use('/documents', authMiddleware, documentRoutes);
 
   // Centralized error handler
   app.use(errorHandler);
