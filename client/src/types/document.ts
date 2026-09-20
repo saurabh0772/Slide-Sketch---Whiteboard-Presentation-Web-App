@@ -41,6 +41,7 @@ export interface IDocumentSummary {
   totalPages: number;
   aspectRatio?: number;
   is16x9?: boolean;
+  gridFsFileId?: string;
   createdAt: string;
   updatedAt: string;
 }

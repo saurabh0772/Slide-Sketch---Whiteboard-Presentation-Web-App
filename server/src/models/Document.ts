@@ -36,6 +36,7 @@ export interface IDocument extends MongooseDocument {
   totalPages: number;
   aspectRatio: number;
   is16x9: boolean;
+  gridFsFileId?: mongoose.Types.ObjectId;
   pages: IPageData[];
   createdAt: Date;
   updatedAt: Date;
@@ -87,6 +88,7 @@ const DocumentSchema = new Schema<IDocument>(
     totalPages: { type: Number, required: true, default: 1 },
     aspectRatio: { type: Number, default: 1.7778 },
     is16x9: { type: Boolean, default: true, index: true },
+    gridFsFileId: { type: Schema.Types.ObjectId, default: null },
     pages: [PageDataSchema],
   },
   {

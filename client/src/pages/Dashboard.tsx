@@ -109,13 +109,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setActiveMenuDocId(null);
       const fullDoc = await fetchDocumentById(docSummary._id);
 
+      const hasPdf = Boolean(fullDoc.gridFsFileId || fullDoc.filePath || (!fullDoc.fileName?.startsWith('blank-') && fullDoc.mimeType === 'application/pdf'));
       await exportPresentationToPdf({
         title: fullDoc.title || docSummary.title,
         slides:
           fullDoc.pages && fullDoc.pages.length > 0
             ? fullDoc.pages
             : [{ pdfPageNumber: 1, annotations: [] }],
-        pdfUrl: fullDoc.filePath ? getPdfFileUrl(fullDoc._id) : undefined,
+        pdfUrl: hasPdf ? getPdfFileUrl(fullDoc._id) : undefined,
       });
 
       setExportingDocId(null);

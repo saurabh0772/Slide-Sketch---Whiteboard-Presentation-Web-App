@@ -127,7 +127,8 @@ export const EditorPage: React.FC<EditorPageProps> = ({
 
   // Load PDF Document for thumbnail generation when document has a PDF file
   useEffect(() => {
-    if (!doc?.filePath) {
+    const hasPdf = Boolean(doc?.gridFsFileId || doc?.filePath || (!doc?.fileName?.startsWith('blank-') && doc?.mimeType === 'application/pdf'));
+    if (!hasPdf) {
       setPdfDoc(null);
       return;
     }
@@ -217,10 +218,11 @@ export const EditorPage: React.FC<EditorPageProps> = ({
         await handleSave(true);
       }
 
+      const hasPdf = Boolean(doc.gridFsFileId || doc.filePath || (!doc.fileName?.startsWith('blank-') && doc.mimeType === 'application/pdf'));
       await exportPresentationToPdf({
         title: doc.title || 'SlideSketch Presentation',
         slides: slidesRef.current,
-        pdfUrl: doc.filePath ? getPdfFileUrl(documentId) : undefined,
+        pdfUrl: hasPdf ? getPdfFileUrl(documentId) : undefined,
       });
       setIsExporting(false);
     } catch (err: any) {
@@ -564,7 +566,8 @@ export const EditorPage: React.FC<EditorPageProps> = ({
     );
   }
 
-  const pdfUrl = doc.filePath ? getPdfFileUrl(documentId) : '';
+  const hasPdf = Boolean(doc?.gridFsFileId || doc?.filePath || (!doc?.fileName?.startsWith('blank-') && doc?.mimeType === 'application/pdf'));
+  const pdfUrl = hasPdf ? getPdfFileUrl(documentId) : '';
 
   return (
     <div className="h-screen flex flex-col bg-neutral-100 overflow-hidden">

@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
+import mongoose from 'mongoose';
 import { DocumentModel } from '../models/Document';
 import { inspectPdf } from '../services/pdfService';
 
@@ -46,6 +48,30 @@ export const uploadDocument = async (
     const baseName = path.basename(originalname, path.extname(originalname));
     const title = (req.body.title as string)?.trim() || pdfMetaTitle || baseName || 'Untitled Document';
 
+    // Store PDF in MongoDB GridFS for permanent storage across all deploys & restarts
+    let gridFsFileId: mongoose.Types.ObjectId | undefined;
+    if (mongoose.connection.db) {
+      try {
+        const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'pdfs' });
+        const uploadStream = bucket.openUploadStream(filename, {
+          contentType: mimetype,
+          metadata: {
+            originalName: originalname,
+            size,
+          },
+        });
+        await new Promise<void>((resolve, reject) => {
+          fsSync.createReadStream(filePath)
+            .pipe(uploadStream)
+            .on('error', reject)
+            .on('finish', () => resolve());
+        });
+        gridFsFileId = uploadStream.id as mongoose.Types.ObjectId;
+      } catch (gridFsErr) {
+        console.warn('[uploadDocument] Could not store PDF in GridFS, relying on local storage:', gridFsErr);
+      }
+    }
+
     // Initialize page entries for each page with unique slide id and original pdfPageNumber
     const initialPages = [];
     for (let i = 1; i <= pageCount; i++) {
@@ -53,6 +79,7 @@ export const uploadDocument = async (
         id: `slide-${i}-${Date.now()}`,
         pageNumber: i,
         pdfPageNumber: i,
+        isUserAdded: false,
         annotations: [],
       });
     }
@@ -67,6 +94,7 @@ export const uploadDocument = async (
       totalPages: pageCount,
       aspectRatio,
       is16x9,
+      gridFsFileId,
       pages: initialPages,
     });
 
@@ -184,25 +212,105 @@ export const serveDocumentFile = async (
     }
 
     // Blank documents don't have a physical PDF file
-    if (!document.filePath) {
+    if (!document.filePath && !document.gridFsFileId && document.fileName?.startsWith('blank-')) {
       res.status(404).json({ success: false, error: 'Blank document without PDF file.' });
       return;
     }
 
-    // Verify file exists on disk
-    try {
-      await fs.access(document.filePath);
-    } catch {
-      res.status(404).json({ success: false, error: 'PDF file not found on disk.' });
+    // 1. Try streaming from MongoDB GridFS (permanent, survives all redeployments & restarts)
+    if (document.gridFsFileId && mongoose.connection.db) {
+      try {
+        const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'pdfs' });
+        const files = await bucket.find({ _id: document.gridFsFileId }).toArray();
+        if (files.length > 0) {
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.setHeader(
+            'Content-Disposition',
+            `inline; filename="${encodeURIComponent(document.originalName)}"`
+          );
+          const downloadStream = bucket.openDownloadStream(document.gridFsFileId);
+          downloadStream.on('error', (streamErr) => {
+            console.error('[serveDocumentFile] GridFS stream error:', streamErr);
+            if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to stream PDF from GridFS' });
+          });
+          downloadStream.pipe(res);
+          return;
+        }
+      } catch (gridFsErr) {
+        console.warn('[serveDocumentFile] GridFS lookup failed, falling back to disk:', gridFsErr);
+      }
+    }
+
+    // Also check GridFS by fileName as secondary GridFS fallback
+    if (document.fileName && mongoose.connection.db) {
+      try {
+        const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'pdfs' });
+        const filesByName = await bucket.find({ filename: document.fileName }).toArray();
+        if (filesByName.length > 0) {
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.setHeader(
+            'Content-Disposition',
+            `inline; filename="${encodeURIComponent(document.originalName)}"`
+          );
+          const downloadStream = bucket.openDownloadStream(filesByName[0]._id);
+          downloadStream.pipe(res);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2. Fallback: Search candidate locations on local disk
+    const candidatePaths = [
+      document.filePath ? path.resolve(document.filePath) : null,
+      document.fileName ? path.resolve(__dirname, '../../uploads', document.fileName) : null,
+      document.fileName ? path.resolve(process.cwd(), 'uploads', document.fileName) : null,
+      document.fileName ? path.resolve(process.cwd(), 'server/uploads', document.fileName) : null,
+    ].filter(Boolean) as string[];
+
+    let validPath: string | null = null;
+    for (const p of candidatePaths) {
+      try {
+        await fs.access(p);
+        validPath = p;
+        break;
+      } catch {
+        // continue search
+      }
+    }
+
+    if (!validPath) {
+      res.status(404).json({ success: false, error: 'PDF file not found on disk or GridFS.' });
       return;
     }
 
+    // If found on disk but not yet in GridFS, backfill to GridFS in background for permanent persistence
+    if (!document.gridFsFileId && mongoose.connection.db) {
+      (async () => {
+        try {
+          const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db!, { bucketName: 'pdfs' });
+          const uploadStream = bucket.openUploadStream(document.fileName, {
+            contentType: 'application/pdf',
+          });
+          fsSync.createReadStream(validPath!).pipe(uploadStream).on('finish', async () => {
+            await DocumentModel.findByIdAndUpdate(document._id, { gridFsFileId: uploadStream.id });
+          });
+        } catch {
+          // ignore background backfill errors
+        }
+      })();
+    }
+
     res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader(
       'Content-Disposition',
       `inline; filename="${encodeURIComponent(document.originalName)}"`
     );
-    res.sendFile(path.resolve(document.filePath));
+    res.sendFile(validPath);
   } catch (error) {
     next(error);
   }
@@ -237,6 +345,7 @@ export const updateDocument = async (
         id: p.id || `slide-${idx + 1}-${Date.now()}`,
         pageNumber: idx + 1,
         pdfPageNumber: p.pdfPageNumber !== undefined ? p.pdfPageNumber : null,
+        isUserAdded: Boolean(p.isUserAdded),
       }));
       document.totalPages = pages.length;
     } else if (typeof totalPages === 'number' && totalPages >= 1) {
@@ -269,6 +378,16 @@ export const deleteDocument = async (
     if (!document) {
       res.status(404).json({ success: false, error: 'Document not found.' });
       return;
+    }
+
+    // Delete from GridFS if present
+    if (document.gridFsFileId && mongoose.connection.db) {
+      try {
+        const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'pdfs' });
+        await bucket.delete(document.gridFsFileId);
+      } catch {
+        // Ignore error if GridFS file was already removed
+      }
     }
 
     // Delete local file if exists
