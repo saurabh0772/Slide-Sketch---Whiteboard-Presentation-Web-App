@@ -13,7 +13,6 @@ import {
   Tv,
   MoreVertical,
   Download,
-  Heart,
   User,
   LogOut,
 } from 'lucide-react';
@@ -508,8 +507,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Footer */}
       <footer className="mt-auto border-t border-neutral-200/80 bg-white/70 backdrop-blur-xs py-4 px-6 text-center text-xs text-neutral-500">
         <div className="flex items-center justify-center space-x-1.5 font-medium">
-          <span>Developed with</span>
-          <Heart className="w-4 h-4 text-rose-500 fill-rose-500 inline-block animate-pulse" />
+          <span>Powered</span>
           <span>by</span>
           <span className="font-semibold text-neutral-800 tracking-wide">Saurabh</span>
         </div>

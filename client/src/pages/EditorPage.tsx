@@ -258,6 +258,7 @@ export const EditorPage: React.FC<EditorPageProps> = ({
           ...next[index],
           annotations: newAnnotations,
         };
+        slidesRef.current = next;
         return next;
       });
 

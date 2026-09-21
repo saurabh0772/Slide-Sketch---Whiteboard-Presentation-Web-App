@@ -7,8 +7,6 @@ import {
   EyeOff,
   AlertCircle,
   ArrowRight,
-  ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import { loginUser } from '../services/api';
 
@@ -63,7 +61,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         </div>
 
         <div className="hidden sm:flex items-center space-x-2 text-xs font-medium text-neutral-600 bg-neutral-100/80 px-3 py-1.5 rounded-full border border-neutral-200">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
           <span>Protected Workspace</span>
         </div>
       </header>
@@ -74,7 +71,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           {/* Card Title & Intro */}
           <div className="text-center space-y-2">
             <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
               <span>Authentication Required</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 tracking-tight">
@@ -147,7 +143,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
             {/* 30-day session info banner */}
             <div className="flex items-center space-x-2 py-1 px-2.5 bg-emerald-50/80 border border-emerald-100 rounded-lg text-emerald-800 text-[11px] font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
               <span>Session will stay securely active for <strong>30 days</strong></span>
             </div>
 
@@ -173,8 +168,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       {/* Footer with Saurabh */}
       <footer className="py-4 text-center text-xs text-neutral-500 border-t border-neutral-200/60 bg-white/50">
         <p className="flex items-center justify-center space-x-1 font-medium">
-          <span>Developed with</span>
-          <span className="text-rose-500 animate-pulse">❤️</span>
+          <span>Powered</span>
           <span>by</span>
           <span className="font-semibold text-neutral-800">Saurabh</span>
         </p>

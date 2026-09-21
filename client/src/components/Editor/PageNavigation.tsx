@@ -5,7 +5,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Keyboard,
-  Heart,
 } from 'lucide-react';
 
 interface PageNavigationProps {
@@ -99,8 +98,7 @@ export const PageNavigation: React.FC<PageNavigationProps> = ({
         </span>
         <span className="text-neutral-300">•</span>
         <span className="flex items-center space-x-1 font-medium text-neutral-600">
-          <span>Made with</span>
-          <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 inline-block animate-pulse" />
+          <span>Powered</span>
           <span>by <span className="font-semibold text-neutral-800">Saurabh</span></span>
         </span>
       </div>

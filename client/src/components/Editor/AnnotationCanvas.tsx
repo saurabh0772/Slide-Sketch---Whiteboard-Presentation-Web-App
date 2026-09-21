@@ -50,28 +50,25 @@ function distToSegmentSquared(
   return (px - projX) * (px - projX) + (py - projY) * (py - projY);
 }
 
-// Helper: check if a logical coordinate (px, py) is within radius of a shape
-function isPointNearShape(px: number, py: number, shape: IAnnotation, radius = 28): boolean {
-  const r2 = radius * radius;
-
+// Helper: exact Euclidean distance from point (px, py) to any annotation shape
+function getDistanceToShape(px: number, py: number, shape: IAnnotation): number {
   if (shape.type === 'pencil' && shape.points && shape.points.length >= 2) {
     const pts = shape.points;
+    let minDistSq = Infinity;
     for (let i = 0; i < pts.length - 2; i += 2) {
-      if (distToSegmentSquared(px, py, pts[i], pts[i + 1], pts[i + 2], pts[i + 3]) <= r2) {
-        return true;
-      }
+      const dSq = distToSegmentSquared(px, py, pts[i], pts[i + 1], pts[i + 2], pts[i + 3]);
+      if (dSq < minDistSq) minDistSq = dSq;
     }
-    // Also check last single point if tiny
-    const lastIdx = pts.length - 2;
-    const dx = px - pts[lastIdx];
-    const dy = py - pts[lastIdx + 1];
-    if (dx * dx + dy * dy <= r2) return true;
-    return false;
+    if (pts.length === 2) {
+      const dx = px - pts[0];
+      const dy = py - pts[1];
+      minDistSq = dx * dx + dy * dy;
+    }
+    return Math.sqrt(minDistSq);
   }
 
   if ((shape.type === 'line' || shape.type === 'arrow') && shape.points && shape.points.length >= 4) {
-    const [x1, y1, x2, y2] = shape.points;
-    return distToSegmentSquared(px, py, x1, y1, x2, y2) <= r2;
+    return Math.sqrt(distToSegmentSquared(px, py, shape.points[0], shape.points[1], shape.points[2], shape.points[3]));
   }
 
   if (shape.type === 'rect') {
@@ -79,79 +76,100 @@ function isPointNearShape(px: number, py: number, shape: IAnnotation, radius = 2
     const y = Math.min(shape.y, shape.y + (shape.height || 0));
     const w = Math.abs(shape.width || 0);
     const h = Math.abs(shape.height || 0);
+    const isFilled = Boolean(shape.fill && shape.fill !== 'transparent' && shape.fill !== 'none');
 
-    // Hit if cursor is inside or near the bounding border
-    if (
-      px >= x - radius &&
-      px <= x + w + radius &&
-      py >= y - radius &&
-      py <= y + h + radius
-    ) {
-      return true;
+    if (isFilled) {
+      if (px >= x && px <= x + w && py >= y && py <= y + h) {
+        return 0;
+      }
+      const clampedX = Math.max(x, Math.min(px, x + w));
+      const clampedY = Math.max(y, Math.min(py, y + h));
+      return Math.hypot(px - clampedX, py - clampedY);
     }
-    return false;
+
+    // Unfilled rectangle: distance to the 4 perimeter edges only
+    const dTop = distToSegmentSquared(px, py, x, y, x + w, y);
+    const dBottom = distToSegmentSquared(px, py, x, y + h, x + w, y + h);
+    const dLeft = distToSegmentSquared(px, py, x, y, x, y + h);
+    const dRight = distToSegmentSquared(px, py, x + w, y, x + w, y + h);
+    return Math.sqrt(Math.min(dTop, dBottom, dLeft, dRight));
   }
 
   if (shape.type === 'ellipse') {
     const w = Math.abs(shape.width || 0);
     const h = Math.abs(shape.height || 0);
-    const cx = shape.x + w / 2;
-    const cy = shape.y + h / 2;
-    const rx = w / 2 + radius;
-    const ry = h / 2 + radius;
-    if (rx > 0 && ry > 0) {
-      const norm = ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2;
-      if (norm <= 1) return true;
+    const rx = w / 2;
+    const ry = h / 2;
+    const cx = shape.x + rx;
+    const cy = shape.y + ry;
+    if (rx <= 0 || ry <= 0) {
+      return Math.hypot(px - cx, py - cy);
     }
-    return false;
+    const isFilled = Boolean(shape.fill && shape.fill !== 'transparent' && shape.fill !== 'none');
+    const norm = ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2;
+
+    if (isFilled && norm <= 1) {
+      return 0;
+    }
+
+    // Distance to ellipse perimeter
+    const angle = Math.atan2(py - cy, px - cx);
+    const ex = cx + rx * Math.cos(angle);
+    const ey = cy + ry * Math.sin(angle);
+    return Math.hypot(px - ex, py - ey);
   }
 
   if (shape.type === 'triangle' && shape.points && shape.points.length >= 6) {
     const [x1, y1, x2, y2, x3, y3] = shape.points;
-    if (
-      distToSegmentSquared(px, py, x1, y1, x2, y2) <= r2 ||
-      distToSegmentSquared(px, py, x2, y2, x3, y3) <= r2 ||
-      distToSegmentSquared(px, py, x3, y3, x1, y1) <= r2
-    ) {
-      return true;
-    }
-    // Check if point is inside triangle
-    const d1 = (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
-    const d2 = (px - x3) * (y2 - y3) - (x2 - x3) * (py - y3);
-    const d3 = (px - x1) * (y3 - y1) - (x3 - x1) * (py - y1);
-    const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
-    const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
-    if (!(hasNeg && hasPos)) {
-      return true;
-    }
-    return false;
-  }
+    const isFilled = Boolean(shape.fill && shape.fill !== 'transparent' && shape.fill !== 'none');
 
-  if (shape.type === 'text') {
-    const approxW = 200;
-    const approxH = (shape.fontSize || 28) * 1.5;
-    return (
-      px >= shape.x - radius &&
-      px <= shape.x + approxW + radius &&
-      py >= shape.y - radius &&
-      py <= shape.y + approxH + radius
-    );
+    if (isFilled) {
+      const d1 = (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
+      const d2 = (px - x3) * (y2 - y3) - (x2 - x3) * (py - y3);
+      const d3 = (px - x1) * (y3 - y1) - (x3 - x1) * (py - y1);
+      const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+      const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+      if (!(hasNeg && hasPos)) {
+        return 0;
+      }
+    }
+
+    const dEdge1 = distToSegmentSquared(px, py, x1, y1, x2, y2);
+    const dEdge2 = distToSegmentSquared(px, py, x2, y2, x3, y3);
+    const dEdge3 = distToSegmentSquared(px, py, x3, y3, x1, y1);
+    return Math.sqrt(Math.min(dEdge1, dEdge2, dEdge3));
   }
 
   if (shape.type === 'graph') {
-    const x = Math.min(shape.x, shape.x + (shape.width || 0));
-    const y = Math.min(shape.y, shape.y + (shape.height || 0));
-    const w = Math.abs(shape.width || 0);
-    const h = Math.abs(shape.height || 0);
-    return (
-      px >= x - radius &&
-      px <= x + w + radius &&
-      py >= y - radius &&
-      py <= y + h + radius
-    );
+    const elements = getGraphElements(shape.x, shape.y, Math.abs(shape.width || 0), Math.abs(shape.height || 0), shape.graphType || 'cartesian');
+    let minDistSq = Infinity;
+
+    for (const axis of elements.axes) {
+      const dSq = distToSegmentSquared(px, py, axis.points[0], axis.points[1], axis.points[2], axis.points[3]);
+      if (dSq < minDistSq) minDistSq = dSq;
+    }
+    for (const tick of elements.ticks) {
+      const dSq = distToSegmentSquared(px, py, tick[0], tick[1], tick[2], tick[3]);
+      if (dSq < minDistSq) minDistSq = dSq;
+    }
+    for (const grid of elements.gridLines) {
+      const dSq = distToSegmentSquared(px, py, grid[0], grid[1], grid[2], grid[3]);
+      if (dSq < minDistSq) minDistSq = dSq;
+    }
+    return Math.sqrt(minDistSq);
   }
 
-  return false;
+  if (shape.type === 'text') {
+    const fontSize = shape.fontSize || 28;
+    const textLen = shape.text?.length || 1;
+    const approxW = Math.max(30, textLen * fontSize * 0.65);
+    const approxH = fontSize * 1.3;
+    const clampedX = Math.max(shape.x, Math.min(px, shape.x + approxW));
+    const clampedY = Math.max(shape.y, Math.min(py, shape.y + approxH));
+    return Math.hypot(px - clampedX, py - clampedY);
+  }
+
+  return Infinity;
 }
 
 export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
@@ -170,6 +188,9 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   const stageRef = useRef<Konva.Stage | null>(null);
   const isDrawingRef = useRef(false);
   const isErasingRef = useRef(false);
+  const erasedOnPointerDownRef = useRef(false);
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastErasedShapeIdRef = useRef<string | null>(null);
   const currentShapeRef = useRef<IAnnotation | null>(null);
 
   // Keep a ref to the latest annotations to prevent stale closure bugs during drag/rapid erase
@@ -183,12 +204,14 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   const handleEraseShape = useCallback(
     (id: string) => {
       if (tool !== 'eraser') return;
-      if (onDeleteAnnotation) {
-        onDeleteAnnotation(id);
-      } else {
-        const next = annotationsRef.current.filter((a) => a.id !== id);
-        if (next.length !== annotationsRef.current.length) {
-          annotationsRef.current = next;
+      const current = annotationsRef.current;
+      const next = current.filter((a) => a.id !== id);
+      if (next.length !== current.length) {
+        // Immediately update annotationsRef so subsequent event ticks don't see the deleted item
+        annotationsRef.current = next;
+        if (onDeleteAnnotation) {
+          onDeleteAnnotation(id);
+        } else {
           onChangeAnnotations(next, true);
         }
       }
@@ -208,35 +231,70 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     [pdfRect]
   );
 
-  // Proximity eraser: check if pointer intersects any shape in annotationsRef
-  const eraseShapesAtPos = useCallback(
-    (pos: { x: number; y: number }) => {
-      if (tool !== 'eraser') return;
-      const currentAnnots = annotationsRef.current;
-      const remaining = currentAnnots.filter((shape) => !isPointNearShape(pos.x, pos.y, shape, 30));
-      if (remaining.length !== currentAnnots.length) {
-        annotationsRef.current = remaining;
-        onChangeAnnotations(remaining, true);
+  // Erase ONLY the single closest shape within proximity threshold to guarantee we never erase multiple items at once
+  const eraseSingleClosestShape = useCallback(
+    (pos: { x: number; y: number }, maxDistance = 14): string | null => {
+      if (tool !== 'eraser') return null;
+      const current = annotationsRef.current;
+      if (current.length === 0) return null;
+
+      let closestShape: IAnnotation | null = null;
+      let minDistance = Infinity;
+
+      for (const shape of current) {
+        const dist = getDistanceToShape(pos.x, pos.y, shape);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestShape = shape;
+        }
       }
+
+      if (closestShape && minDistance <= maxDistance) {
+        handleEraseShape(closestShape.id);
+        return closestShape.id;
+      }
+      return null;
     },
-    [tool, onChangeAnnotations]
+    [tool, handleEraseShape]
   );
 
   // Handle pointer down (drawing start or eraser start)
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    // If eraser tool, check direct target and proximity
+    // If eraser tool, handle single-target tap/click erase
     if (tool === 'eraser') {
       isErasingRef.current = true;
+      erasedOnPointerDownRef.current = false;
+      lastErasedShapeIdRef.current = null;
+
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (pointer) {
+        pointerDownPosRef.current = { x: pointer.x, y: pointer.y };
+      } else {
+        pointerDownPosRef.current = null;
+      }
+
       const target = e.target;
-      if (target && target !== target.getStage()) {
+
+      // 1. Direct hit on an annotation shape
+      if (target && target !== stage) {
         const shapeId = target.id() || target.getParent()?.id();
-        if (shapeId) {
+        if (shapeId && annotationsRef.current.some((a) => a.id === shapeId)) {
           handleEraseShape(shapeId);
+          erasedOnPointerDownRef.current = true;
+          lastErasedShapeIdRef.current = shapeId;
+          return;
         }
       }
+
+      // 2. Proximity tap on empty canvas: erase ONLY the single closest shape within 14px
       const pos = getLogicalPointerPos(e);
       if (pos) {
-        eraseShapesAtPos(pos);
+        const erasedId = eraseSingleClosestShape(pos, 14);
+        if (erasedId) {
+          erasedOnPointerDownRef.current = true;
+          lastErasedShapeIdRef.current = erasedId;
+        }
       }
       return;
     }
@@ -344,20 +402,44 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
 
   // Handle pointer move (drawing progress or eraser drag)
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    // If eraser tool is dragging over shapes, erase on touch or proximity
+    // If eraser tool is dragging over shapes, erase on direct touch or single closest proximity
     if (tool === 'eraser') {
       const mouseEvt = e.evt as MouseEvent;
-      if (isErasingRef.current || (mouseEvt && mouseEvt.buttons === 1)) {
-        const target = e.target;
-        if (target && target !== target.getStage()) {
-          const shapeId = target.id() || target.getParent()?.id();
-          if (shapeId) {
-            handleEraseShape(shapeId);
-          }
+      const isDragging = isErasingRef.current || (mouseEvt && mouseEvt.buttons === 1);
+      if (!isDragging) return;
+
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+
+      // Guard against tap jitter: if a shape was already erased on pointerdown, do NOT erase
+      // any other shape until the cursor has moved by at least 10px (intentional drag)
+      if (pointerDownPosRef.current && pointer) {
+        const dx = pointer.x - pointerDownPosRef.current.x;
+        const dy = pointer.y - pointerDownPosRef.current.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (erasedOnPointerDownRef.current && dist < 10) {
+          return;
         }
-        const pos = getLogicalPointerPos(e);
-        if (pos) {
-          eraseShapesAtPos(pos);
+      }
+
+      // In active drag mode: erase shapes as the cursor passes over them
+      const target = e.target;
+      if (target && target !== stage) {
+        const shapeId = target.id() || target.getParent()?.id();
+        if (shapeId && shapeId !== lastErasedShapeIdRef.current && annotationsRef.current.some((a) => a.id === shapeId)) {
+          handleEraseShape(shapeId);
+          lastErasedShapeIdRef.current = shapeId;
+          return;
+        }
+      }
+
+      // Proximity check during active drag (tight 8px radius)
+      const pos = getLogicalPointerPos(e);
+      if (pos) {
+        const erasedId = eraseSingleClosestShape(pos, 8);
+        if (erasedId) {
+          lastErasedShapeIdRef.current = erasedId;
         }
       }
       return;
@@ -412,6 +494,9 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   // Handle pointer up (drawing finalize or eraser stop)
   const handleMouseUp = () => {
     isErasingRef.current = false;
+    erasedOnPointerDownRef.current = false;
+    pointerDownPosRef.current = null;
+    lastErasedShapeIdRef.current = null;
 
     if (!isDrawingRef.current || !currentShapeRef.current) return;
     isDrawingRef.current = false;
@@ -491,7 +576,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     onChangeAnnotations(nextAnnotations, true);
   };
 
-  const hitTolerance = 32;
+  const hitTolerance = 8;
 
   return (
     <div
@@ -523,9 +608,9 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
             scaleX={pdfRect.scale}
             scaleY={pdfRect.scale}
           >
-            {/* Render all stored page annotations with generous hit area for effortless erasing */}
+            {/* Render all stored page annotations */}
             {annotations.map((shape) => {
-              const effectiveHitWidth = Math.max((shape.strokeWidth || 2) + hitTolerance, 32);
+              const effectiveHitWidth = Math.max((shape.strokeWidth || 2) + hitTolerance, 14);
 
               if (shape.type === 'pencil') {
                 return (
@@ -539,14 +624,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     tension={0.4}
                     lineCap="round"
                     lineJoin="round"
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
                   />
                 );
               }
@@ -562,14 +639,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     hitStrokeWidth={effectiveHitWidth}
                     lineCap="round"
                     lineJoin="round"
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
                   />
                 );
               }
@@ -588,14 +657,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     hitStrokeWidth={effectiveHitWidth}
                     lineCap="round"
                     lineJoin="round"
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
                   />
                 );
               }
@@ -609,19 +670,11 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     y={shape.y}
                     width={shape.width || 0}
                     height={shape.height || 0}
-                    fill={shape.fill || 'transparent'}
+                    fill={shape.fill || undefined}
                     stroke={shape.stroke}
                     strokeWidth={shape.strokeWidth}
                     hitStrokeWidth={effectiveHitWidth}
                     cornerRadius={4}
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
                   />
                 );
               }
@@ -637,18 +690,10 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     y={shape.y + h / 2}
                     radiusX={w / 2}
                     radiusY={h / 2}
-                    fill={shape.fill || 'transparent'}
+                    fill={shape.fill || undefined}
                     stroke={shape.stroke}
                     strokeWidth={shape.strokeWidth}
                     hitStrokeWidth={effectiveHitWidth}
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
                   />
                 );
               }
@@ -660,20 +705,12 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     id={shape.id}
                     points={shape.points}
                     closed={true}
-                    fill={shape.fill || 'transparent'}
+                    fill={shape.fill || undefined}
                     stroke={shape.stroke}
                     strokeWidth={shape.strokeWidth}
                     hitStrokeWidth={effectiveHitWidth}
                     lineCap="round"
                     lineJoin="round"
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
                   />
                 );
               }
@@ -689,9 +726,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     fontSize={shape.fontSize || 28}
                     fontFamily="Inter, system-ui, -apple-system, sans-serif"
                     fill={shape.stroke}
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
                   />
                 );
               }
@@ -702,28 +736,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                 const elements = getGraphElements(shape.x, shape.y, w, h, shape.graphType || 'cartesian');
 
                 return (
-                  <Group
-                    key={shape.id}
-                    id={shape.id}
-                    onClick={() => handleEraseShape(shape.id)}
-                    onTap={() => handleEraseShape(shape.id)}
-                    onPointerDown={() => handleEraseShape(shape.id)}
-                    onMouseEnter={(e) => {
-                      if (tool === 'eraser' && (e.evt as MouseEvent).buttons === 1) {
-                        handleEraseShape(shape.id);
-                      }
-                    }}
-                  >
-                    {/* Transparent hit area spanning the graph bounding box */}
-                    <Rect
-                      x={shape.x}
-                      y={shape.y}
-                      width={w}
-                      height={h}
-                      fill="transparent"
-                      hitStrokeWidth={effectiveHitWidth}
-                    />
-
+                  <Group key={shape.id} id={shape.id}>
                     {/* Coordinate grid lines if in grid mode */}
                     {elements.gridLines.map((pts, idx) => (
                       <Line
@@ -731,6 +744,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                         points={pts}
                         stroke={shape.stroke}
                         strokeWidth={1}
+                        hitStrokeWidth={effectiveHitWidth}
                         opacity={0.3}
                         dash={[4, 4]}
                       />
@@ -743,6 +757,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                         points={pts}
                         stroke={shape.stroke}
                         strokeWidth={Math.max(1.5, shape.strokeWidth * 0.8)}
+                        hitStrokeWidth={effectiveHitWidth}
                         lineCap="round"
                       />
                     ))}

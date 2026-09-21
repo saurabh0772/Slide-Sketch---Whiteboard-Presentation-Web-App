@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Pencil,
   Minus,
@@ -21,6 +21,7 @@ import {
   RotateCcw,
   Plus,
   Download,
+  MoreVertical,
 } from 'lucide-react';
 import type { ToolType, TriangleMode, GraphMode } from '../../types/canvas';
 
@@ -101,6 +102,23 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   sidebarOpen,
   onToggleSidebar,
 }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
+
   return (
     <header className="h-14 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-3 sm:px-4 flex items-center justify-between shadow-xs select-none z-30">
       {/* Left section: Back, Sidebar toggle, Title */}
@@ -345,15 +363,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           <Redo2 className="w-4 h-4" />
         </button>
 
-        <button
-          onClick={onClearPage}
-          title="Reset canvas for this slide (Undoable)"
-          className="flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline font-medium">Reset Canvas</span>
-        </button>
-
         {hasSelected && (
           <button
             onClick={onDeleteSelected}
@@ -364,45 +373,106 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           </button>
         )}
 
-        <button
-          onClick={onSave}
-          disabled={isSaving}
-          title="Save annotations to server (Ctrl+S)"
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all shadow-xs ${
-            isSaved
-              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-              : isDirty
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700 ring-2 ring-indigo-500/30'
-              : 'bg-neutral-800 text-neutral-100 hover:bg-neutral-700 dark:bg-neutral-700 dark:hover:bg-neutral-600'
-          }`}
-        >
-          {isSaving ? (
-            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : isSaved ? (
-            <Check className="w-3.5 h-3.5" />
-          ) : (
-            <Save className="w-3.5 h-3.5" />
-          )}
-          <span>{isSaving ? 'Saving' : isSaved ? 'Saved' : 'Save'}</span>
-        </button>
-
-        {/* Download PDF Button - beside Save */}
-        {onDownloadPdf && (
+        {/* Three dots menu for Reset Canvas, Save PDF, Download PDF */}
+        <div className="relative" ref={menuRef}>
           <button
-            onClick={onDownloadPdf}
-            disabled={isExporting}
-            title="Download whiteboard / presentation as PDF"
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-lg text-xs sm:text-sm font-semibold transition-all border border-neutral-300/80 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 shadow-2xs disabled:opacity-50 cursor-pointer"
+            onClick={() => setIsMenuOpen((prev) => !prev)}
+            title="More options"
+            className={`p-1.5 rounded-lg transition-colors relative ${
+              isMenuOpen
+                ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-white'
+                : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+            }`}
           >
-            {isExporting ? (
-              <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <MoreVertical className="w-4 h-4" />
+            {isDirty && !isSaved && (
+              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-neutral-900" />
             )}
-            <span className="hidden md:inline">{isExporting ? 'Exporting...' : 'Download PDF'}</span>
-            <span className="md:hidden">{isExporting ? '...' : 'PDF'}</span>
           </button>
-        )}
+
+          {isMenuOpen && (
+            <div
+              className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-neutral-800 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+              style={{ transformOrigin: 'top right' }}
+            >
+              {/* Option 1: Reset this canvas */}
+              <button
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  onClearPage();
+                }}
+                className="w-full flex items-center space-x-3 px-3.5 py-2.5 text-xs sm:text-sm text-neutral-700 dark:text-neutral-200 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400 transition-colors text-left cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4 text-rose-500 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Reset this canvas</span>
+                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-normal">
+                    Clear slide annotations
+                  </span>
+                </div>
+              </button>
+
+              <div className="my-1 border-t border-neutral-100 dark:border-neutral-700/60" />
+
+              {/* Option 2: Save PDF */}
+              <button
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  onSave();
+                }}
+                disabled={isSaving}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs sm:text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/60 transition-colors text-left disabled:opacity-50 cursor-pointer"
+              >
+                <div className="flex items-center space-x-3">
+                  {isSaving ? (
+                    <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                  ) : isSaved ? (
+                    <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                  ) : (
+                    <Save className="w-4 h-4 text-indigo-500 shrink-0" />
+                  )}
+                  <div className="flex flex-col">
+                    <span className="font-medium">Save PDF</span>
+                    <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-normal">
+                      {isSaving ? 'Saving changes...' : isSaved ? 'All changes saved' : 'Save current progress'}
+                    </span>
+                  </div>
+                </div>
+                {isDirty && !isSaved && !isSaving && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 font-medium">
+                    Unsaved
+                  </span>
+                )}
+              </button>
+
+              {/* Option 3: Download PDF */}
+              {onDownloadPdf && (
+                <button
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onDownloadPdf();
+                  }}
+                  disabled={isExporting}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 text-xs sm:text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/60 transition-colors text-left disabled:opacity-50 cursor-pointer"
+                >
+                  <div className="flex items-center space-x-3">
+                    {isExporting ? (
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                    ) : (
+                      <Download className="w-4 h-4 text-indigo-500 shrink-0" />
+                    )}
+                    <div className="flex flex-col">
+                      <span className="font-medium">Download PDF</span>
+                      <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-normal">
+                        {isExporting ? 'Generating PDF...' : 'Export with annotations'}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
