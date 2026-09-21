@@ -87,6 +87,7 @@ export const SlideViewport: React.FC<SlideViewportProps> = ({
       <div
         ref={containerRef}
         className="relative w-full max-w-[1720px] aspect-video max-h-[calc(100vh-140px)] bg-white rounded-xl shadow-xl overflow-hidden border border-neutral-200 dark:border-neutral-700 flex items-center justify-center"
+        style={{ touchAction: 'none' }}
       >
         {containerSize.width > 0 && containerSize.height > 0 && (
           <>

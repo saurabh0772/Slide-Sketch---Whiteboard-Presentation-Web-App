@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Stage,
   Layer,
@@ -172,6 +172,21 @@ function getDistanceToShape(px: number, py: number, shape: IAnnotation): number 
   return Infinity;
 }
 
+// Helper: get logical coords from clientX/clientY relative to stage
+function getLogicalFromClient(
+  clientX: number,
+  clientY: number,
+  stage: Konva.Stage,
+  pdfRect: IPdfRect
+): { x: number; y: number } | null {
+  const container = stage.container();
+  if (!container) return null;
+  const rect = container.getBoundingClientRect();
+  const stageX = clientX - rect.left;
+  const stageY = clientY - rect.top;
+  return toLogicalCoords(stageX, stageY, pdfRect);
+}
+
 export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   containerWidth,
   containerHeight,
@@ -186,7 +201,13 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   onDeleteAnnotation,
 }) => {
   const stageRef = useRef<Konva.Stage | null>(null);
+  const staticLayerRef = useRef<Konva.Layer | null>(null);
+  const activeLayerRef = useRef<Konva.Layer | null>(null);
+  const activeLineRef = useRef<Konva.Line | null>(null);
+
   const isDrawingRef = useRef(false);
+  const isDrawingPencilRef = useRef(false);
+  const activePencilPointsRef = useRef<number[]>([]);
   const isErasingRef = useRef(false);
   const erasedOnPointerDownRef = useRef(false);
   const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -197,8 +218,23 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   const annotationsRef = useRef<IAnnotation[]>(annotations);
   annotationsRef.current = annotations;
 
-  // Active shape being drawn in real-time
+  // Active shape being drawn in real-time (for non-pencil shapes)
   const [activeShape, setActiveShape] = useState<IAnnotation | null>(null);
+
+  // Release active drawing or erasing if pointer lifts or cancels anywhere in window
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (isDrawingRef.current || isErasingRef.current) {
+        handlePointerUp();
+      }
+    };
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+  }, []);
 
   // Erase a specific shape by ID using the freshest annotations ref
   const handleEraseShape = useCallback(
@@ -221,7 +257,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
 
   // Get pointer coordinates in PDF logical space
   const getLogicalPointerPos = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    (e: Konva.KonvaEventObject<PointerEvent | MouseEvent | TouchEvent>) => {
       const stage = e.target.getStage();
       if (!stage) return null;
       const pointer = stage.getPointerPosition();
@@ -259,7 +295,21 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   );
 
   // Handle pointer down (drawing start or eraser start)
-  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+  const handlePointerDown = (e: Konva.KonvaEventObject<PointerEvent>) => {
+    // Prevent browser default touch gestures (pan/zoom)
+    if (e.evt && typeof e.evt.preventDefault === 'function') {
+      e.evt.preventDefault();
+    }
+
+    try {
+      const targetEl = e.evt.target as HTMLElement | null;
+      if (targetEl && typeof targetEl.setPointerCapture === 'function' && e.evt.pointerId !== undefined) {
+        targetEl.setPointerCapture(e.evt.pointerId);
+      }
+    } catch {
+      // Ignore if pointer capture fails
+    }
+
     // If eraser tool, handle single-target tap/click erase
     if (tool === 'eraser') {
       isErasingRef.current = true;
@@ -302,23 +352,30 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     const pos = getLogicalPointerPos(e);
     if (!pos) return;
 
-    // SHAPE TOOLS (pencil, line, arrow, rect, ellipse)
+    // FAST-PATH: PENCIL TOOL (Zero React state re-renders for pen pad & stylus)
+    if (tool === 'pencil') {
+      isDrawingRef.current = true;
+      isDrawingPencilRef.current = true;
+      activePencilPointsRef.current = [pos.x, pos.y];
+
+      if (activeLineRef.current) {
+        activeLineRef.current.points([pos.x, pos.y, pos.x + 0.1, pos.y + 0.1]);
+        activeLineRef.current.stroke(strokeColor);
+        activeLineRef.current.strokeWidth(strokeWidth);
+        activeLineRef.current.visible(true);
+        activeLayerRef.current?.batchDraw();
+      }
+      return;
+    }
+
+    // SHAPE TOOLS (line, arrow, rect, ellipse, triangle, graph)
     isDrawingRef.current = true;
+    isDrawingPencilRef.current = false;
     const newId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
     let newShape: IAnnotation;
 
-    if (tool === 'pencil') {
-      newShape = {
-        id: newId,
-        type: 'pencil',
-        x: 0,
-        y: 0,
-        points: [pos.x, pos.y],
-        stroke: strokeColor,
-        strokeWidth,
-      };
-    } else if (tool === 'line') {
+    if (tool === 'line') {
       newShape = {
         id: newId,
         type: 'line',
@@ -401,18 +458,19 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   };
 
   // Handle pointer move (drawing progress or eraser drag)
-  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    // If eraser tool is dragging over shapes, erase on direct touch or single closest proximity
+  const handlePointerMove = (e: Konva.KonvaEventObject<PointerEvent>) => {
+    if (e.evt && typeof e.evt.preventDefault === 'function') {
+      e.evt.preventDefault();
+    }
+
+    // If eraser tool is dragging over shapes
     if (tool === 'eraser') {
-      const mouseEvt = e.evt as MouseEvent;
-      const isDragging = isErasingRef.current || (mouseEvt && mouseEvt.buttons === 1);
+      const isDragging = isErasingRef.current || (e.evt && e.evt.buttons === 1);
       if (!isDragging) return;
 
       const stage = e.target.getStage();
       const pointer = stage?.getPointerPosition();
 
-      // Guard against tap jitter: if a shape was already erased on pointerdown, do NOT erase
-      // any other shape until the cursor has moved by at least 10px (intentional drag)
       if (pointerDownPosRef.current && pointer) {
         const dx = pointer.x - pointerDownPosRef.current.x;
         const dy = pointer.y - pointerDownPosRef.current.y;
@@ -423,7 +481,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
         }
       }
 
-      // In active drag mode: erase shapes as the cursor passes over them
       const target = e.target;
       if (target && target !== stage) {
         const shapeId = target.id() || target.getParent()?.id();
@@ -434,7 +491,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
         }
       }
 
-      // Proximity check during active drag (tight 8px radius)
       const pos = getLogicalPointerPos(e);
       if (pos) {
         const erasedId = eraseSingleClosestShape(pos, 8);
@@ -445,19 +501,61 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       return;
     }
 
-    if (!isDrawingRef.current || !currentShapeRef.current) return;
+    if (!isDrawingRef.current) return;
+
+    // FAST-PATH: PENCIL HANDWRITING (Direct update via ref & batchDraw, 0ms React latency)
+    if (isDrawingPencilRef.current && activeLineRef.current) {
+      const stage = e.target.getStage();
+      const pts = activePencilPointsRef.current;
+      let added = false;
+
+      // Check for high-frequency coalesced events from pen tablet / stylus driver
+      const nativeEvt = e.evt as PointerEvent;
+      const coalesced = typeof nativeEvt?.getCoalescedEvents === 'function' ? nativeEvt.getCoalescedEvents() : null;
+
+      if (coalesced && coalesced.length > 0 && stage) {
+        for (let i = 0; i < coalesced.length; i++) {
+          const pt = getLogicalFromClient(coalesced[i].clientX, coalesced[i].clientY, stage, pdfRect);
+          if (pt) {
+            const lastX = pts[pts.length - 2];
+            const lastY = pts[pts.length - 1];
+            const dx = pt.x - lastX;
+            const dy = pt.y - lastY;
+            if (dx * dx + dy * dy >= 2.25) {
+              pts.push(pt.x, pt.y);
+              added = true;
+            }
+          }
+        }
+      } else {
+        const pos = getLogicalPointerPos(e);
+        if (pos) {
+          const lastX = pts[pts.length - 2];
+          const lastY = pts[pts.length - 1];
+          const dx = pos.x - lastX;
+          const dy = pos.y - lastY;
+          if (dx * dx + dy * dy >= 2.25) {
+            pts.push(pos.x, pos.y);
+            added = true;
+          }
+        }
+      }
+
+      if (added) {
+        activeLineRef.current.points(pts);
+        activeLayerRef.current?.batchDraw();
+      }
+      return;
+    }
+
+    if (!currentShapeRef.current) return;
 
     const pos = getLogicalPointerPos(e);
     if (!pos) return;
 
     const shape = currentShapeRef.current;
 
-    if (shape.type === 'pencil') {
-      const nextPoints = [...(shape.points || []), pos.x, pos.y];
-      const updated = { ...shape, points: nextPoints };
-      currentShapeRef.current = updated;
-      setActiveShape(updated);
-    } else if (shape.type === 'line' || shape.type === 'arrow') {
+    if (shape.type === 'line' || shape.type === 'arrow') {
       const startX = shape.points ? shape.points[0] : pos.x;
       const startY = shape.points ? shape.points[1] : pos.y;
       const updated = { ...shape, points: [startX, startY, pos.x, pos.y] };
@@ -492,15 +590,58 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   };
 
   // Handle pointer up (drawing finalize or eraser stop)
-  const handleMouseUp = () => {
+  const handlePointerUp = () => {
     isErasingRef.current = false;
     erasedOnPointerDownRef.current = false;
     pointerDownPosRef.current = null;
     lastErasedShapeIdRef.current = null;
 
-    if (!isDrawingRef.current || !currentShapeRef.current) return;
+    if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
 
+    // 1. PENCIL STROKE COMMITTAL
+    if (isDrawingPencilRef.current) {
+      isDrawingPencilRef.current = false;
+      const pts = [...activePencilPointsRef.current];
+      activePencilPointsRef.current = [];
+
+      if (activeLineRef.current) {
+        activeLineRef.current.visible(false);
+        activeLineRef.current.points([]);
+        activeLayerRef.current?.batchDraw();
+      }
+
+      if (!pts || pts.length < 2) return;
+
+      let finalPoints = pts;
+      // Convert single-tap/dot (length === 2) into subpixel segment so round lineCap renders a solid dot
+      if (finalPoints.length === 2) {
+        finalPoints = [
+          finalPoints[0],
+          finalPoints[1],
+          finalPoints[0] + 0.1,
+          finalPoints[1] + 0.1,
+        ];
+      }
+
+      const finalShape: IAnnotation = {
+        id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        type: 'pencil',
+        x: 0,
+        y: 0,
+        points: finalPoints,
+        stroke: strokeColor,
+        strokeWidth,
+      };
+
+      const nextAnnotations = [...annotationsRef.current, finalShape];
+      annotationsRef.current = nextAnnotations;
+      onChangeAnnotations(nextAnnotations, true);
+      return;
+    }
+
+    // 2. NON-PENCIL SHAPE COMMITTAL
+    if (!currentShapeRef.current) return;
     let finalShape = { ...currentShapeRef.current };
     currentShapeRef.current = null;
     setActiveShape(null);
@@ -521,7 +662,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
         h = Math.abs(h);
       }
 
-      // Ignore accidental tiny clicks
       if (w < 4 && h < 4) {
         return;
       }
@@ -560,10 +700,6 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       };
     }
 
-    if (finalShape.type === 'pencil' && (!finalShape.points || finalShape.points.length < 4)) {
-      return;
-    }
-
     if ((finalShape.type === 'line' || finalShape.type === 'arrow') && finalShape.points) {
       const [x1, y1, x2, y2] = finalShape.points;
       const dist = Math.hypot(x2 - x1, y2 - y1);
@@ -587,20 +723,20 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
         width: containerWidth,
         height: containerHeight,
         cursor: tool === 'eraser' ? 'pointer' : 'crosshair',
+        touchAction: 'none',
+        userSelect: 'none',
       }}
     >
       <Stage
         ref={stageRef}
         width={containerWidth}
         height={containerHeight}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onTouchStart={handleMouseDown}
-        onTouchMove={handleMouseMove}
-        onTouchEnd={handleMouseUp}
+        style={{ touchAction: 'none' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
-        <Layer>
+        <Layer ref={staticLayerRef}>
           {/* Group is placed and scaled exactly to match the displayed slide */}
           <Group
             x={pdfRect.x}
@@ -621,7 +757,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     stroke={shape.stroke}
                     strokeWidth={shape.strokeWidth}
                     hitStrokeWidth={effectiveHitWidth}
-                    tension={0.4}
+                    tension={0.25}
                     lineCap="round"
                     lineJoin="round"
                   />
@@ -783,20 +919,33 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
 
               return null;
             })}
+          </Group>
+        </Layer>
 
-            {/* Active drawing shape preview */}
-            {activeShape && (
+        {/* Layer 2: Fast isolated Active Layer for real-time drawing */}
+        <Layer ref={activeLayerRef}>
+          <Group
+            x={pdfRect.x}
+            y={pdfRect.y}
+            scaleX={pdfRect.scale}
+            scaleY={pdfRect.scale}
+          >
+            {/* Direct-rendered active pencil line (zero React overhead during live drawing) */}
+            <Line
+              ref={activeLineRef}
+              visible={false}
+              points={[]}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              tension={0.25}
+              lineCap="round"
+              lineJoin="round"
+              listening={false}
+            />
+
+            {/* Active drawing shape preview for non-pencil tools */}
+            {activeShape && activeShape.type !== 'pencil' && (
               <>
-                {activeShape.type === 'pencil' && (
-                  <Line
-                    points={activeShape.points}
-                    stroke={activeShape.stroke}
-                    strokeWidth={activeShape.strokeWidth}
-                    tension={0.4}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                )}
                 {activeShape.type === 'line' && (
                   <Line
                     points={activeShape.points}
