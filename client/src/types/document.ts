@@ -1,6 +1,6 @@
 export interface IAnnotation {
   id: string;
-  type: 'pencil' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'triangle' | 'graph';
+  type: 'pencil' | 'highlighter' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'triangle' | 'graph';
   // Coordinates relative to the logical PDF workspace (1920 base width)
   x: number;
   y: number;
@@ -12,6 +12,7 @@ export interface IAnnotation {
   stroke: string;
   strokeWidth: number;
   fill?: string;
+  opacity?: number;
   triangleType?: 'regular' | 'right';
   graphType?: 'quadrant' | 'cartesian' | 'grid';
 }

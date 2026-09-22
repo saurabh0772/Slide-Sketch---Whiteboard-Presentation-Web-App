@@ -42,11 +42,26 @@ export const EditorPage: React.FC<EditorPageProps> = ({
 
   const handleSelectTool = useCallback((selectedTool: ToolType) => {
     setTool(selectedTool);
-    if (selectedTool === 'triangle') {
+
+    if (selectedTool === 'highlighter') {
+      setStrokeColor('#fce083');
+      setStrokeWidth(24);
+    } else if (selectedTool === 'pencil') {
+      setStrokeColor('#1e293b');
+      setStrokeWidth(4);
+    } else if (selectedTool === 'triangle') {
       setTriangleMode('right'); // First preference on tap
     } else if (selectedTool === 'graph') {
       setGraphMode('cartesian'); // First preference on tap: Cartesian 4Q
     }
+  }, []);
+
+  const handleChangeStrokeColor = useCallback((color: string) => {
+    setStrokeColor(color);
+  }, []);
+
+  const handleChangeStrokeWidth = useCallback((width: number) => {
+    setStrokeWidth(width);
   }, []);
 
   // Save state
@@ -521,17 +536,18 @@ export const EditorPage: React.FC<EditorPageProps> = ({
         return;
       }
 
-      // 5. QUICK TOOL SELECTION (P or 7, L, A, R, C, T, G, E or 0)
+      // 5. QUICK TOOL SELECTION: 1 Highlighter, 2 Line, 3 Arrow, 4 Square, 5 Circle, 6 Triangle, 7 Pen, 8 Graph, 0 Eraser
       if (!isCtrlOrCmd && !e.altKey) {
         const key = e.key.toLowerCase();
-        if (key === 'p' || key === '7') setTool('pencil');
-        else if (key === 'l') setTool('line');
-        else if (key === 'a') setTool('arrow');
-        else if (key === 'r') setTool('rect');
-        else if (key === 'c') handleSelectTool('ellipse');
-        else if (key === 't') handleSelectTool('triangle');
-        else if (key === 'g') handleSelectTool('graph');
-        else if (key === 'e' || key === '0') handleSelectTool('eraser');
+        if (key === '1' || key === 'h') handleSelectTool('highlighter');
+        else if (key === '2' || key === 'l') handleSelectTool('line');
+        else if (key === '3' || key === 'a') handleSelectTool('arrow');
+        else if (key === '4' || key === 'r') handleSelectTool('rect');
+        else if (key === '5' || key === 'c') handleSelectTool('ellipse');
+        else if (key === '6' || key === 't') handleSelectTool('triangle');
+        else if (key === '7' || key === 'p') handleSelectTool('pencil');
+        else if (key === '8' || key === 'g') handleSelectTool('graph');
+        else if (key === '0' || key === 'e') handleSelectTool('eraser');
       }
     };
 
@@ -582,9 +598,9 @@ export const EditorPage: React.FC<EditorPageProps> = ({
         onChangeTriangleMode={setTriangleMode}
         onChangeGraphMode={setGraphMode}
         strokeColor={strokeColor}
-        onChangeStrokeColor={setStrokeColor}
+        onChangeStrokeColor={handleChangeStrokeColor}
         strokeWidth={strokeWidth}
-        onChangeStrokeWidth={setStrokeWidth}
+        onChangeStrokeWidth={handleChangeStrokeWidth}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={handleUndo}

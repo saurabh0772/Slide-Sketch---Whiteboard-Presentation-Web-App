@@ -2,6 +2,7 @@ import type { IAnnotation } from './document';
 
 export type ToolType =
   | 'pencil'
+  | 'highlighter'
   | 'line'
   | 'arrow'
   | 'rect'

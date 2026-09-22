@@ -26,12 +26,15 @@ export interface IExportOptions {
 export function renderShapeToContext(ctx: CanvasRenderingContext2D, shape: IAnnotation) {
   ctx.save();
 
-  if (shape.type === 'pencil' && shape.points && shape.points.length >= 2) {
+  if ((shape.type === 'pencil' || shape.type === 'highlighter') && shape.points && shape.points.length >= 2) {
     ctx.beginPath();
-    ctx.strokeStyle = shape.stroke || '#000000';
-    ctx.lineWidth = shape.strokeWidth || 2;
+    ctx.strokeStyle = shape.stroke || (shape.type === 'highlighter' ? '#fce083' : '#000000');
+    ctx.lineWidth = shape.strokeWidth || (shape.type === 'highlighter' ? 24 : 2);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    if (shape.type === 'highlighter') {
+      ctx.globalAlpha = shape.opacity ?? 0.55;
+    }
 
     ctx.moveTo(shape.points[0], shape.points[1]);
     for (let i = 2; i < shape.points.length; i += 2) {
@@ -341,9 +344,11 @@ export async function exportPresentationToPdf({
       }
     }
 
-    // Render all annotations for this slide
+    // Render all annotations for this slide: highlighters first so ink and text render cleanly on top
     if (slide.annotations && Array.isArray(slide.annotations)) {
-      for (const shape of slide.annotations) {
+      const highlighters = slide.annotations.filter((s) => s.type === 'highlighter');
+      const others = slide.annotations.filter((s) => s.type !== 'highlighter');
+      for (const shape of [...highlighters, ...others]) {
         renderShapeToContext(ctx, shape);
       }
     }

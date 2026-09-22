@@ -2,7 +2,7 @@ import mongoose, { Document as MongooseDocument, Schema } from 'mongoose';
 
 export interface IAnnotation {
   id: string;
-  type: 'pencil' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'triangle' | 'graph';
+  type: 'pencil' | 'highlighter' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'triangle' | 'graph';
   // PDF-relative or logical coordinates
   x: number;
   y: number;
@@ -14,6 +14,7 @@ export interface IAnnotation {
   stroke: string;
   strokeWidth: number;
   fill?: string;
+  opacity?: number;
   triangleType?: 'regular' | 'right';
   graphType?: 'quadrant' | 'cartesian' | 'grid';
 }
@@ -47,7 +48,7 @@ const AnnotationSchema = new Schema<IAnnotation>(
     id: { type: String, required: true },
     type: {
       type: String,
-      enum: ['pencil', 'line', 'arrow', 'rect', 'ellipse', 'text', 'triangle', 'graph'],
+      enum: ['pencil', 'highlighter', 'line', 'arrow', 'rect', 'ellipse', 'text', 'triangle', 'graph'],
       required: true,
     },
     x: { type: Number, required: true },
@@ -60,6 +61,7 @@ const AnnotationSchema = new Schema<IAnnotation>(
     stroke: { type: String, default: '#000000' },
     strokeWidth: { type: Number, default: 2 },
     fill: { type: String },
+    opacity: { type: Number },
     triangleType: { type: String, enum: ['regular', 'right'] },
     graphType: { type: String, enum: ['quadrant', 'cartesian', 'grid'], default: 'cartesian' },
   },

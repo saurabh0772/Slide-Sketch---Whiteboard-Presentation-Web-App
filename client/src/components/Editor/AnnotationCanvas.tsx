@@ -52,7 +52,7 @@ function distToSegmentSquared(
 
 // Helper: exact Euclidean distance from point (px, py) to any annotation shape
 function getDistanceToShape(px: number, py: number, shape: IAnnotation): number {
-  if (shape.type === 'pencil' && shape.points && shape.points.length >= 2) {
+  if ((shape.type === 'pencil' || shape.type === 'highlighter') && shape.points && shape.points.length >= 2) {
     const pts = shape.points;
     let minDistSq = Infinity;
     for (let i = 0; i < pts.length - 2; i += 2) {
@@ -207,6 +207,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
 
   const isDrawingRef = useRef(false);
   const isDrawingPencilRef = useRef(false);
+  const isDrawingHighlighterRef = useRef(false);
   const activePencilPointsRef = useRef<number[]>([]);
   const isErasingRef = useRef(false);
   const erasedOnPointerDownRef = useRef(false);
@@ -352,16 +353,18 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     const pos = getLogicalPointerPos(e);
     if (!pos) return;
 
-    // FAST-PATH: PENCIL TOOL (Zero React state re-renders for pen pad & stylus)
-    if (tool === 'pencil') {
+    // FAST-PATH: PENCIL & HIGHLIGHTER TOOLS (Zero React state re-renders for pen pad & stylus)
+    if (tool === 'pencil' || tool === 'highlighter') {
       isDrawingRef.current = true;
-      isDrawingPencilRef.current = true;
+      isDrawingPencilRef.current = tool === 'pencil';
+      isDrawingHighlighterRef.current = tool === 'highlighter';
       activePencilPointsRef.current = [pos.x, pos.y];
 
       if (activeLineRef.current) {
         activeLineRef.current.points([pos.x, pos.y, pos.x + 0.1, pos.y + 0.1]);
         activeLineRef.current.stroke(strokeColor);
         activeLineRef.current.strokeWidth(strokeWidth);
+        activeLineRef.current.opacity(tool === 'highlighter' ? 0.55 : 1);
         activeLineRef.current.visible(true);
         activeLayerRef.current?.batchDraw();
       }
@@ -371,6 +374,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     // SHAPE TOOLS (line, arrow, rect, ellipse, triangle, graph)
     isDrawingRef.current = true;
     isDrawingPencilRef.current = false;
+    isDrawingHighlighterRef.current = false;
     const newId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
     let newShape: IAnnotation;
@@ -503,14 +507,15 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
 
     if (!isDrawingRef.current) return;
 
-    // FAST-PATH: PENCIL HANDWRITING (Direct update via ref & batchDraw, 0ms React latency)
-    if (isDrawingPencilRef.current && activeLineRef.current) {
+    // FAST-PATH: PENCIL & HIGHLIGHTER HANDWRITING (Direct update via ref & batchDraw, 0ms React latency)
+    if ((isDrawingPencilRef.current || isDrawingHighlighterRef.current) && activeLineRef.current) {
       const stage = e.target.getStage();
       const pts = activePencilPointsRef.current;
       let added = false;
 
       // Check for high-frequency coalesced events from pen tablet / stylus driver
       const nativeEvt = e.evt as PointerEvent;
+      const isShift = isDrawingHighlighterRef.current && Boolean(nativeEvt?.shiftKey);
       const coalesced = typeof nativeEvt?.getCoalescedEvents === 'function' ? nativeEvt.getCoalescedEvents() : null;
 
       if (coalesced && coalesced.length > 0 && stage) {
@@ -519,10 +524,11 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
           if (pt) {
             const lastX = pts[pts.length - 2];
             const lastY = pts[pts.length - 1];
+            const targetY = isShift ? pts[1] : pt.y;
             const dx = pt.x - lastX;
-            const dy = pt.y - lastY;
+            const dy = targetY - lastY;
             if (dx * dx + dy * dy >= 2.25) {
-              pts.push(pt.x, pt.y);
+              pts.push(pt.x, targetY);
               added = true;
             }
           }
@@ -532,10 +538,11 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
         if (pos) {
           const lastX = pts[pts.length - 2];
           const lastY = pts[pts.length - 1];
+          const targetY = isShift ? pts[1] : pos.y;
           const dx = pos.x - lastX;
-          const dy = pos.y - lastY;
+          const dy = targetY - lastY;
           if (dx * dx + dy * dy >= 2.25) {
-            pts.push(pos.x, pos.y);
+            pts.push(pos.x, targetY);
             added = true;
           }
         }
@@ -599,9 +606,11 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
 
-    // 1. PENCIL STROKE COMMITTAL
-    if (isDrawingPencilRef.current) {
+    // 1. FREEHAND STROKE COMMITTAL (Pencil & Highlighter)
+    if (isDrawingPencilRef.current || isDrawingHighlighterRef.current) {
+      const isHighlighter = isDrawingHighlighterRef.current;
       isDrawingPencilRef.current = false;
+      isDrawingHighlighterRef.current = false;
       const pts = [...activePencilPointsRef.current];
       activePencilPointsRef.current = [];
 
@@ -626,12 +635,13 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
 
       const finalShape: IAnnotation = {
         id: `shape-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        type: 'pencil',
+        type: isHighlighter ? 'highlighter' : 'pencil',
         x: 0,
         y: 0,
         points: finalPoints,
         stroke: strokeColor,
         strokeWidth,
+        opacity: isHighlighter ? 0.55 : 1,
       };
 
       const nextAnnotations = [...annotationsRef.current, finalShape];
@@ -744,25 +754,31 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
             scaleX={pdfRect.scale}
             scaleY={pdfRect.scale}
           >
-            {/* Render all stored page annotations */}
-            {annotations.map((shape) => {
-              const effectiveHitWidth = Math.max((shape.strokeWidth || 2) + hitTolerance, 14);
+            {/* Render all stored page annotations: highlighters render underneath ink and shapes */}
+            {(() => {
+              const highlighters = annotations.filter((s) => s.type === 'highlighter');
+              const others = annotations.filter((s) => s.type !== 'highlighter');
+              const ordered = [...highlighters, ...others];
 
-              if (shape.type === 'pencil') {
-                return (
-                  <Line
-                    key={shape.id}
-                    id={shape.id}
-                    points={shape.points}
-                    stroke={shape.stroke}
-                    strokeWidth={shape.strokeWidth}
-                    hitStrokeWidth={effectiveHitWidth}
-                    tension={0.25}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                );
-              }
+              return ordered.map((shape) => {
+                const effectiveHitWidth = Math.max((shape.strokeWidth || 2) + hitTolerance, 14);
+
+                if (shape.type === 'pencil' || shape.type === 'highlighter') {
+                  return (
+                    <Line
+                      key={shape.id}
+                      id={shape.id}
+                      points={shape.points}
+                      stroke={shape.stroke}
+                      strokeWidth={shape.strokeWidth}
+                      opacity={shape.type === 'highlighter' ? (shape.opacity ?? 0.55) : 1}
+                      hitStrokeWidth={effectiveHitWidth}
+                      tension={0.25}
+                      lineCap="round"
+                      lineJoin="round"
+                    />
+                  );
+                }
 
               if (shape.type === 'line') {
                 return (
@@ -918,7 +934,8 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
               }
 
               return null;
-            })}
+            });
+          })()}
           </Group>
         </Layer>
 
@@ -943,8 +960,8 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
               listening={false}
             />
 
-            {/* Active drawing shape preview for non-pencil tools */}
-            {activeShape && activeShape.type !== 'pencil' && (
+            {/* Active drawing shape preview for non-freehand tools */}
+            {activeShape && activeShape.type !== 'pencil' && activeShape.type !== 'highlighter' && (
               <>
                 {activeShape.type === 'line' && (
                   <Line

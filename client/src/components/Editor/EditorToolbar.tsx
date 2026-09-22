@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Pencil,
+  Highlighter,
   Minus,
   ArrowRight,
   Square,
@@ -57,19 +58,24 @@ interface EditorToolbarProps {
 }
 
 const PRESET_COLORS = [
-  { name: 'Dark Charcoal', value: '#1e293b' },
+  { name: 'Dark Charcoal (Black)', value: '#1e293b' },
+  { name: 'Highlighter Orange', value: '#fce083' },
   { name: 'Pure White', value: '#ffffff' },
   { name: 'Rose Red', value: '#e11d48' },
   { name: 'Royal Blue', value: '#2563eb' },
   { name: 'Emerald Green', value: '#059669' },
-  { name: 'Amber Orange', value: '#d97706' },
-  { name: 'Violet Purple', value: '#7c3aed' },
 ];
 
-const STROKE_WIDTHS = [
+const PENCIL_STROKE_WIDTHS = [
   { label: 'Thin', value: 2 },
   { label: 'Medium', value: 4 },
   { label: 'Thick', value: 8 },
+];
+
+const HIGHLIGHTER_STROKE_WIDTHS = [
+  { label: 'Thin', value: 16 },
+  { label: 'Medium', value: 24 },
+  { label: 'Thick', value: 36 },
 ];
 
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({
@@ -104,6 +110,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const currentStrokeWidths = tool === 'highlighter' ? HIGHLIGHTER_STROKE_WIDTHS : PENCIL_STROKE_WIDTHS;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -159,39 +167,58 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
       {/* Middle section: Drawing Tools */}
       <div className="flex items-center space-x-1 bg-neutral-100 dark:bg-neutral-800/80 p-1 rounded-xl border border-neutral-200/80 dark:border-neutral-700/60 overflow-x-auto max-w-full">
+        {/* 1. Highlighter */}
         <ToolButton
-          icon={<Pencil className="w-4 h-4" />}
-          label="Pencil / Freehand (P or 7)"
-          active={tool === 'pencil'}
-          onClick={() => onSelectTool('pencil')}
+          icon={
+            <div className="relative flex items-center justify-center">
+              <Highlighter className="w-4 h-4" />
+              <span
+                className="absolute -bottom-0.5 left-0.5 right-0.5 h-1 rounded-full opacity-90 shadow-2xs"
+                style={{ backgroundColor: '#fce083' }}
+              />
+            </div>
+          }
+          label="Highlighter (1 or H) - Auto Orange 24px"
+          active={tool === 'highlighter'}
+          onClick={() => onSelectTool('highlighter')}
         />
+
+        {/* 2. Line */}
         <ToolButton
           icon={<Minus className="w-4 h-4" />}
-          label="Line (L)"
+          label="Line (2 or L)"
           active={tool === 'line'}
           onClick={() => onSelectTool('line')}
         />
+
+        {/* 3. Arrow */}
         <ToolButton
           icon={<ArrowRight className="w-4 h-4" />}
-          label="Arrow (A)"
+          label="Arrow (3 or A)"
           active={tool === 'arrow'}
           onClick={() => onSelectTool('arrow')}
         />
+
+        {/* 4. Square / Rectangle */}
         <ToolButton
           icon={<Square className="w-4 h-4" />}
-          label="Rectangle (R)"
+          label="Square / Rectangle (4 or R)"
           active={tool === 'rect'}
           onClick={() => onSelectTool('rect')}
         />
+
+        {/* 5. Circle / Ellipse */}
         <ToolButton
           icon={<Circle className="w-4 h-4" />}
-          label="Circle (C)"
+          label="Circle / Ellipse (5 or C)"
           active={tool === 'ellipse'}
           onClick={() => onSelectTool('ellipse')}
         />
+
+        {/* 6. Triangle */}
         <ToolButton
           icon={triangleMode === 'regular' ? <Triangle className="w-4 h-4" /> : <TriangleRight className="w-4 h-4" />}
-          label="Triangle (T) - Right-Angle by default"
+          label="Triangle (6 or T) - Right-Angle by default"
           active={tool === 'triangle'}
           onClick={() => {
             onSelectTool('triangle');
@@ -231,9 +258,18 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           </div>
         )}
 
+        {/* 7. Pen / Pencil */}
+        <ToolButton
+          icon={<Pencil className="w-4 h-4" />}
+          label="Pen / Pencil (7 or P) - Auto Black 4px"
+          active={tool === 'pencil'}
+          onClick={() => onSelectTool('pencil')}
+        />
+
+        {/* 8. Graph / Coordinate Plane */}
         <ToolButton
           icon={<LineChart className="w-4 h-4" />}
-          label="Graph / Coordinate Plane (G) - Cartesian (4Q) / Grid / Quadrant"
+          label="Graph / Coordinate Plane (8 or G) - Cartesian (4Q) / Grid / Quadrant"
           active={tool === 'graph'}
           onClick={() => {
             onSelectTool('graph');
@@ -286,9 +322,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           </div>
         )}
 
+        {/* 0. Eraser */}
         <ToolButton
           icon={<Eraser className="w-4 h-4" />}
-          label="Eraser (E or 0)"
+          label="Eraser (0 or E)"
           active={tool === 'eraser'}
           onClick={() => onSelectTool('eraser')}
         />
@@ -326,7 +363,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
         {/* Stroke Width Selector */}
         <div className="flex items-center space-x-1">
-          {STROKE_WIDTHS.map((sw) => (
+          {currentStrokeWidths.map((sw) => (
             <button
               key={sw.value}
               onClick={() => onChangeStrokeWidth(sw.value)}
